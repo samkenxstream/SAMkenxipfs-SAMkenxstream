@@ -1,11 +1,11 @@
 'use strict'
 
-const browser = require('webextension-polyfill')
-const debug = require('debug')
+import browser from 'webextension-polyfill'
+import debug from 'debug'
 const log = debug('ipfs-companion:notifier')
 log.error = debug('ipfs-companion:notifier:error')
 
-function createNotifier (getState) {
+export default function createNotifier (getState) {
   const { getMessage } = browser.i18n
   return async (titleKey, messageKey, messageParam) => {
     const title = browser.i18n.getMessage(titleKey) || titleKey
@@ -21,8 +21,8 @@ function createNotifier (getState) {
         return await browser.notifications.create({
           type: 'basic',
           iconUrl: browser.runtime.getURL('icons/ipfs-logo-on.svg'),
-          title: title,
-          message: message
+          title,
+          message
         })
       } catch (err) {
         log.error('failed to create a notification', err)
@@ -30,5 +30,3 @@ function createNotifier (getState) {
     }
   }
 }
-
-module.exports = createNotifier

@@ -1,14 +1,15 @@
 'use strict'
 /* eslint-env browser, webextensions */
-const browser = require('webextension-polyfill')
+import browser from 'webextension-polyfill'
 
-function createWelcomePageStore (i18n, runtime) {
+export default function createWelcomePageStore (i18n, runtime) {
   return function welcomePageStore (state, emitter) {
     state.isIpfsOnline = null
     state.peerCount = null
     state.webuiRootUrl = null
     let port
     emitter.on('DOMContentLoaded', async () => {
+      browser.runtime.sendMessage({ telemetry: { trackView: 'welcome' } })
       emitter.emit('render')
       port = runtime.connect({ name: 'browser-action-port' })
       port.onMessage.addListener(async (message) => {
@@ -36,5 +37,3 @@ function createWelcomePageStore (i18n, runtime) {
     })
   }
 }
-
-module.exports = createWelcomePageStore

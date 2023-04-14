@@ -1,17 +1,17 @@
 'use strict'
 /* eslint-env browser, webextensions */
 
-require('./quick-import.css')
+import './quick-import.css'
 
-const browser = require('webextension-polyfill')
-const choo = require('choo')
-const html = require('choo/html')
-const logo = require('./logo')
-const externalApiClient = require('../lib/ipfs-client/external')
-const { formatImportDirectory } = require('../lib/ipfs-import')
-const all = require('it-all')
-const drop = require('drag-and-drop-files')
-const filesize = require('filesize')
+import browser from 'webextension-polyfill'
+import choo from 'choo'
+import html from 'choo/html/index.js'
+import logo from './logo.js'
+import * as externalApiClient from '../lib/ipfs-client/external.js'
+import { formatImportDirectory } from '../lib/ipfs-import.js'
+import all from 'it-all'
+import drop from 'drag-and-drop-files'
+import { filesize } from 'filesize'
 
 document.title = browser.i18n.getMessage('quickImport_page_title')
 
@@ -48,6 +48,7 @@ function quickImportStore (state, emitter) {
   let port
 
   emitter.on('DOMContentLoaded', async () => {
+    browser.runtime.sendMessage({ telemetry: { trackView: 'quick-import' } })
     // initialize connection to the background script which will trigger UI updates
     port = browser.runtime.connect({ name: 'browser-action-port' })
     port.onMessage.addListener(async (message) => {
@@ -60,6 +61,11 @@ function quickImportStore (state, emitter) {
   })
 
   emitter.on('fileInputChange', event => processFiles(state, emitter, event.target.files))
+
+  // update companion preference
+  emitter.on('optionChange', ({ key, value }) => {
+    browser.storage.local.set({ [key]: value })
+  })
 
   // drag & drop anywhere
   drop(document.body, files => processFiles(state, emitter, files))
@@ -138,6 +144,10 @@ async function processFiles (state, emitter, files) {
     copyShareLink(results)
     preloadFilesAtPublicGateway(results)
 
+    // update preferred import dir if user specified one while importing
+    if (state.userChangedImportDir) {
+      emitter.emit('optionChange', { key: 'importDir', value: state.importDir })
+    }
     // present result to the user using the beast available way
     if (!state.openViaWebUI || state.ipfsNodeType.startsWith('embedded')) {
       await openFilesAtGateway(importDir)

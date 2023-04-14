@@ -1,10 +1,20 @@
-const path = require('path')
-const webpack = require('webpack')
-const { merge } = require('webpack-merge')
-const TerserPlugin = require('terser-webpack-plugin')
-const MiniCssExtractPlugin = require('mini-css-extract-plugin')
+import path from 'path'
+import webpack from 'webpack'
+import { merge } from 'webpack-merge'
+import TerserPlugin from 'terser-webpack-plugin'
+import MiniCssExtractPlugin from 'mini-css-extract-plugin'
+import { fileURLToPath } from 'url'
+import { createRequire } from 'module'
+const require = createRequire(import.meta.url)
 
-// common configuration shared by all targets
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+const devBuild = process.env.NODE_ENV === 'development'
+
+/**
+ * common configuration shared by all targets
+ * @type {import('webpack').Configuration}
+ */
 const commonConfig = {
   target: 'web',
   bail: true,
@@ -25,7 +35,6 @@ const commonConfig = {
     ]
   },
   plugins: [
-    // new require('webpack-bundle-analyzer').BundleAnalyzerPlugin(),
     new webpack.ProgressPlugin({
       percentBy: 'entries'
     }),
@@ -38,8 +47,9 @@ const commonConfig = {
     }),
     new webpack.DefinePlugin({
       global: 'window', // https://github.com/webpack/webpack/issues/5627#issuecomment-394309966
+      'process.emitWarning': (message, type) => {}, // console.warn(`${type}${type ? ': ' : ''}${message}`),
       'process.env': {
-        NODE_ENV: '"production"',
+        // NODE_ENV: '"production"',
         IPFS_MONITORING: false,
         DEBUG: false // controls verbosity of Hapi HTTP server in js-ipfs
       }
@@ -53,9 +63,9 @@ const commonConfig = {
       },
       {
         test: /\.(png|jpe?g|gif|svg|eot|otf|ttf|woff|woff2)$/i,
-        loader: 'file-loader',
-        options: {
-          name: 'assets/[name].[ext]'
+        type: 'asset/resource',
+        generator: {
+          filename: 'assets/[name][ext]'
         }
       },
       {
@@ -71,7 +81,7 @@ const commonConfig = {
     ]
   },
   resolve: {
-    /* mainFields: ['browser', 'main'], */
+    mainFields: ['browser', 'main'],
     extensions: ['.js', '.json'],
     alias: {
       buffer: path.resolve(__dirname, 'node_modules/buffer'), // js-ipfs uses newer impl.
@@ -79,6 +89,9 @@ const commonConfig = {
       stream: 'readable-stream' // cure general insanity
     },
     fallback: {
+      stream: 'readable-stream',
+      'stream/web': 'readable-stream',
+      worker_threads: false,
       util: false,
       fs: false,
       path: require.resolve('path-browserify'), // legacy in src/lib/ipfs-proxy
@@ -102,7 +115,14 @@ const commonConfig = {
   }
 }
 
-// background page bundle (with heavy dependencies)
+if (devBuild) {
+  commonConfig.devtool = 'source-map'
+}
+
+/**
+ * background page bundle (with heavy dependencies)
+ * @type {import('webpack').Configuration}
+ */
 const bgConfig = merge(commonConfig, {
   name: 'background',
   entry: {
@@ -118,23 +138,25 @@ const bgConfig = merge(commonConfig, {
           name: 'ipfs',
           priority: 10,
           enforce: true,
-          // Include js-ipfs and js-ipfs-http-client
-          test: /\/node_modules\/(ipfs|ipfs-http-client|ipfs-postmsg-proxy|peer-info|bcrypto|ipfsx|libp2p*)\//
+          // Include js-ipfs and js-kubo-rpc-client
+          test: /\/node_modules\/(ipfs-core|kubo-rpc-client)\//
         }
       }
     }
   }
 })
 
-// user interface pages with shared common libraries
+/**
+ * user interface pages with shared common libraries
+ * @type {import('webpack').Configuration}
+ */
 const uiConfig = merge(commonConfig, {
   name: 'ui',
   entry: {
     browserAction: './add-on/src/popup/browser-action/index.js',
     importPage: './add-on/src/popup/quick-import.js',
     optionsPage: './add-on/src/options/options.js',
-    //  TODO: remove or fix (window.ipfs) proxyAclManagerPage: './add-on/src/pages/proxy-acl/index.js',
-    // TODO: remove or fix (window.ipfs) proxyAclDialog: './add-on/src/pages/proxy-access-dialog/index.js',
+    recoveryPage: './add-on/src/recovery/recovery.js',
     welcomePage: './add-on/src/landing-pages/welcome/index.js'
   },
   optimization: {
@@ -155,45 +177,21 @@ const uiConfig = merge(commonConfig, {
   }
 })
 
-// content scripts injected into tabs
+/**
+ * content scripts injected into tabs
+ * @type {import('webpack').Configuration}
+ */
 const contentScriptsConfig = merge(commonConfig, {
   name: 'contentScripts',
   entry: {
-    // TODO: remove or fix (window.ipfs) ipfsProxyContentScriptPayload: './add-on/src/contentScripts/ipfs-proxy/page.js',
     linkifyContentScript: './add-on/src/contentScripts/linkifyDOM.js'
   }
 })
 
-// special content script that injects window.ipfs into REAL window object
-// (by default scripts executed via tabs.executeScript get a sandbox version)
-/* TODO: remove or fix - depending what we do with  window.ipfs
-const proxyContentScriptConfig = merge(commonConfig, {
-  name: 'proxyContentScript',
-  dependencies: ['contentScripts'],
-  entry: {
-    // below is just a loader for ipfsProxyContentScriptPayload
-    ipfsProxyContentScript: './add-on/src/contentScripts/ipfs-proxy/content.js'
-  },
-  module: {
-    rules: [
-      {
-        exclude: /node_modules/,
-        test: /\.js$/,
-        use: ['babel-loader']
-      },
-      {
-        // payload is already in bundled form, so we load raw code as-is
-        test: /ipfsProxyContentScriptPayload\.bundle\.js$/,
-        loader: 'raw-loader'
-      }
-    ]
-  }
-})
-*/
-
-module.exports = [
+const config = [
   bgConfig,
   uiConfig,
   contentScriptsConfig
-  //  TODO: remove or fix (window.ipfs) proxyContentScriptConfig
 ]
+
+export default config

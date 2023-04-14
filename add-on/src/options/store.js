@@ -1,22 +1,26 @@
 'use strict'
 /* eslint-env browser, webextensions */
 
-const browser = require('webextension-polyfill')
-const { optionDefaults } = require('../lib/options')
-const { createRuntimeChecks } = require('../lib/runtime-checks')
+import browser from 'webextension-polyfill'
+import { optionDefaults } from '../lib/options.js'
+import createRuntimeChecks from '../lib/runtime-checks.js'
 
 // The store contains and mutates the state for the app
-module.exports = (state, emitter) => {
+export default function optionStore (state, emitter) {
   state.options = optionDefaults
 
   const updateStateOptions = async () => {
     const runtime = await createRuntimeChecks(browser)
     state.withNodeFromBrave = runtime.brave && await runtime.brave.getIPFSEnabled()
+    /**
+     * FIXME: Why are we setting `state.options` when state is supposed to extend options?
+     */
     state.options = await getOptions()
     emitter.emit('render')
   }
 
   emitter.on('DOMContentLoaded', async () => {
+    browser.runtime.sendMessage({ telemetry: { trackView: 'options' } })
     updateStateOptions()
     browser.storage.onChanged.addListener(updateStateOptions)
   })

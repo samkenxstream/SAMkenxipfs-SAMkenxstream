@@ -1,18 +1,20 @@
 'use strict'
 /* eslint-env browser, webextensions */
 
-const debug = require('debug')
+import debug from 'debug'
+
+import LRU from 'lru-cache'
+import isIPFS from 'is-ipfs'
+import isFQDN from 'is-fqdn'
+import { dropSlash, ipfsUri, pathAtHttpGateway, sameGateway } from './ipfs-path.js'
+import { safeURL } from './options.js'
+import { braveNodeType } from './ipfs-client/brave.js'
+import { recoveryPagePath } from './constants.js'
+
 const log = debug('ipfs-companion:request')
 log.error = debug('ipfs-companion:request:error')
 
-const LRU = require('lru-cache')
-const isIPFS = require('is-ipfs')
-const isFQDN = require('is-fqdn')
-const { pathAtHttpGateway, sameGateway, ipfsUri } = require('./ipfs-path')
-const { safeURL } = require('./options')
-const { braveNodeType } = require('./ipfs-client/brave')
-
-const redirectOptOutHint = 'x-ipfs-companion-no-redirect'
+export const redirectOptOutHint = 'x-ipfs-companion-no-redirect'
 const recoverableNetworkErrors = new Set([
   // Firefox
   'NS_ERROR_UNKNOWN_HOST', // dns failure
@@ -31,7 +33,7 @@ const onHeadersReceivedRedirect = new Set()
 
 // Request modifier provides event listeners for the various stages of making an HTTP request
 // API Details: https://developer.mozilla.org/en-US/Add-ons/WebExtensions/API/webRequest
-function createRequestModifier (getState, dnslinkResolver, ipfsPathValidator, runtime) {
+export function createRequestModifier (getState, dnslinkResolver, ipfsPathValidator, runtime) {
   const browser = runtime.browser
   const runtimeRoot = browser.runtime.getURL('/')
   const webExtensionOrigin = runtimeRoot ? new URL(runtimeRoot).origin : 'http://companion-origin' // avoid 'null' because it has special meaning
@@ -54,11 +56,11 @@ function createRequestModifier (getState, dnslinkResolver, ipfsPathValidator, ru
   }
 
   // Various types of requests are identified once and cached across all browser.webRequest hooks
-  const requestCacheCfg = { max: 128, maxAge: 1000 * 30 }
+  const requestCacheCfg = { max: 128, ttl: 1000 * 30 }
   const ignoredRequests = new LRU(requestCacheCfg)
   const ignore = (id) => ignoredRequests.set(id, true)
   const isIgnored = (id) => ignoredRequests.get(id) !== undefined
-  const errorInFlight = new LRU({ max: 3, maxAge: 1000 })
+  const errorInFlight = new LRU({ max: 3, ttl: 1000 })
 
   // Returns a canonical hostname representing the site from url
   // Main reason for this is unwrapping DNSLink from local subdomain
@@ -140,6 +142,13 @@ function createRequestModifier (getState, dnslinkResolver, ipfsPathValidator, ru
       const state = getState()
       if (!state.active) return
 
+      // When local IPFS node is unreachable , show recovery page where user can redirect
+      // to public gateway.
+      if (!state.nodeActive && request.type === 'main_frame' && sameGateway(request.url, state.gwURL)) {
+        const publicUri = ipfsPathValidator.resolveToPublicUrl(request.url, state.pubGwURLString)
+        return { redirectUrl: `${dropSlash(runtimeRoot)}${recoveryPagePath}#${encodeURIComponent(publicUri)}` }
+      }
+
       // When Subdomain Proxy is enabled we normalize address bar requests made
       // to the local gateway and replace raw IP with 'localhost' hostname to
       // take advantage of subdomain redirect provided by go-ipfs >= 0.5
@@ -214,7 +223,7 @@ function createRequestModifier (getState, dnslinkResolver, ipfsPathValidator, ru
           // '403 - Forbidden' fix for Chrome and Firefox
           // --------------------------------------------
           // We update "Origin: *-extension://" HTTP headers in requests made to API
-          // by js-ipfs-http-client running in the background page of browser
+          // by js-kubo-rpc-client running in the background page of browser
           // extension.  Without this, some users would need to do manual CORS
           // whitelisting by adding "..extension://<UUID>" to
           // API.HTTPHeaders.Access-Control-Allow-Origin in go-ipfs config.
@@ -449,9 +458,6 @@ function createRequestModifier (getState, dnslinkResolver, ipfsPathValidator, ru
     }
   }
 }
-
-exports.redirectOptOutHint = redirectOptOutHint
-exports.createRequestModifier = createRequestModifier
 
 // Returns a string with URL at the active gateway (local or public)
 function redirectToGateway (request, url, state, ipfsPathValidator, runtime) {

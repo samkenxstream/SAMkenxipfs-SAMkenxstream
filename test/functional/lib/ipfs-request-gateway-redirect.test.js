@@ -1,15 +1,15 @@
 'use strict'
-const { describe, it, before, beforeEach, after } = require('mocha')
-const sinon = require('sinon')
-const { expect } = require('chai')
-const { URL } = require('url')
-const browser = require('sinon-chrome')
-const { initState } = require('../../../add-on/src/lib/state')
-const { createRuntimeChecks } = require('../../../add-on/src/lib/runtime-checks')
-const { createRequestModifier, redirectOptOutHint } = require('../../../add-on/src/lib/ipfs-request')
-const createDnslinkResolver = require('../../../add-on/src/lib/dnslink')
-const { createIpfsPathValidator } = require('../../../add-on/src/lib/ipfs-path')
-const { optionDefaults } = require('../../../add-on/src/lib/options')
+import { describe, it, before, beforeEach, after } from 'mocha'
+import sinon from 'sinon'
+import { expect } from 'chai'
+import { URL } from 'url'
+import browser from 'sinon-chrome'
+import { initState } from '../../../add-on/src/lib/state.js'
+import createRuntimeChecks from '../../../add-on/src/lib/runtime-checks.js'
+import { createRequestModifier, redirectOptOutHint } from '../../../add-on/src/lib/ipfs-request.js'
+import createDnslinkResolver from '../../../add-on/src/lib/dnslink.js'
+import { createIpfsPathValidator } from '../../../add-on/src/lib/ipfs-path.js'
+import { optionDefaults } from '../../../add-on/src/lib/options.js'
 
 const url2request = (string) => {
   return { url: string, type: 'main_frame' }
@@ -32,6 +32,8 @@ describe('modifyRequest.onBeforeRequest:', function () {
   before(function () {
     global.URL = URL
     global.browser = browser
+    browser.runtime.id = 'testid'
+    browser.runtime.getURL.returns('chrome-extension://testid/')
   })
 
   beforeEach(async function () {
@@ -351,7 +353,7 @@ describe('modifyRequest.onBeforeRequest:', function () {
       describe('request for IPFS path at the localhost', function () {
         // we do not touch local requests, as it may interfere with other nodes running at the same machine
         // or could produce false-positives such as redirection from localhost:5001/ipfs/path to localhost:8080/ipfs/path
-        it('should fix localhost API hostname to IP', function () {
+        it('should fix localhost Kubo RPC hostname to IP', function () {
           const request = url2request('http://localhost:5001/ipfs/QmPhnvn747LqwPYMJmQVorMaGbMSgA7mRRoyyZYz3DoZRQ/')
           // expectNoRedirect(modifyRequest, request)
           expect(modifyRequest.onBeforeRequest(request).redirectUrl)
@@ -373,14 +375,14 @@ describe('modifyRequest.onBeforeRequest:', function () {
           expect(modifyRequest.onBeforeRequest(request).redirectUrl)
             .to.equal('http://127.0.0.1:5001/ipfs/QmPhnvn747LqwPYMJmQVorMaGbMSgA7mRRoyyZYz3DoZRQ/')
         })
-        it('should fix localhost API to IP', function () {
+        it('should be left untouched if /webui on localhost Kubo RPC port', function () {
           // https://github.com/ipfs/ipfs-companion/issues/291
           const request = url2request('http://localhost:5001/webui')
           // expectNoRedirect(modifyRequest, request)
           expect(modifyRequest.onBeforeRequest(request).redirectUrl)
             .to.equal('http://127.0.0.1:5001/webui')
         })
-        it('should be left untouched if localhost API IP is used, even when x-ipfs-path is present', function () {
+        it('should be left untouched if localhost Kubo RPC IP is used, even when x-ipfs-path is present', function () {
           // https://github.com/ipfs-shipyard/ipfs-companion/issues/604
           const request = url2request('http://127.0.0.1:5001/ipfs/QmPhnvn747LqwPYMJmQVorMaGbMSgA7mRRoyyZYz3DoZRQ/')
           request.responseHeaders = [{ name: 'X-Ipfs-Path', value: '/ipfs/QmPhnvn747LqwPYMJmQVorMaGbMSgA7mRRoyyZYz3DDIFF' }]
@@ -421,6 +423,45 @@ describe('modifyRequest.onBeforeRequest:', function () {
       state.gwURL = new URL(state.gwURLString)
       const request = url2request('https://bar.com/ipfs/QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR?argTest#hashTest')
       expect(modifyRequest.onBeforeRequest(request).redirectUrl).to.equal('https://foo/ipfs/QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR?argTest#hashTest')
+    })
+  })
+
+  describe('Recovers Page if node is unreachable', function () {
+    beforeEach(function () {
+      global.browser = browser
+      state.ipfsNodeType = 'external'
+      state.redirect = true
+      state.peerCount = -1 // this simulates Kubo RPC being offline
+      state.gwURLString = 'http://localhost:8080'
+      state.gwURL = new URL('http://localhost:8080')
+      state.pubGwURLString = 'https://ipfs.io'
+      state.pubGwURL = new URL('https://ipfs.io')
+    })
+    it('should present recovery page if node is offline and redirect is enabled', function () {
+      expect(state.nodeActive).to.be.equal(false)
+      state.redirect = true
+      const request = url2request('https://localhost:8080/ipfs/QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR/foo/bar')
+      expect(modifyRequest.onBeforeRequest(request).redirectUrl).to.equal('chrome-extension://testid/dist/recovery/recovery.html#https%3A%2F%2Fipfs.io%2Fipfs%2FQmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR%2Ffoo%2Fbar')
+    })
+    it('should present recovery page if node is offline and redirect is disabled', function () {
+      expect(state.nodeActive).to.be.equal(false)
+      state.redirect = false
+      const request = url2request('https://localhost:8080/ipfs/QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR/foo/bar')
+      expect(modifyRequest.onBeforeRequest(request).redirectUrl).to.equal('chrome-extension://testid/dist/recovery/recovery.html#https%3A%2F%2Fipfs.io%2Fipfs%2FQmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR%2Ffoo%2Fbar')
+    })
+    it('should not show recovery page if node is offline, redirect is enabled, but non-gateway URL failed to load from the same port', function () {
+      // this covers https://github.com/ipfs/ipfs-companion/issues/1162 and https://twitter.com/unicomp21/status/1626244123102679041
+      state.redirect = true
+      expect(state.nodeActive).to.be.equal(false)
+      const request = url2request('https://localhost:8080/')
+      expect(modifyRequest.onBeforeRequest(request)).to.equal(undefined)
+    })
+    it('should not show recovery page if extension is disabled', function () {
+      // allows user to quickly avoid anything similar to https://github.com/ipfs/ipfs-companion/issues/1162
+      state.active = false
+      expect(state.nodeActive).to.be.equal(false)
+      const request = url2request('https://localhost:8080/ipfs/QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR/foo/bar')
+      expect(modifyRequest.onBeforeRequest(request)).to.equal(undefined)
     })
   })
 

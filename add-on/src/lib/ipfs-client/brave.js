@@ -1,29 +1,65 @@
 'use strict'
 /* eslint-env browser, webextensions */
+import pWaitFor from 'p-wait-for'
 
-const debug = require('debug')
+import debug from 'debug'
+
+import * as external from './external.js'
+import toUri from 'multiaddr-to-uri'
+import { welcomePage, optionsPage, tickMs } from '../constants.js'
 const log = debug('ipfs-companion:client:brave')
 log.error = debug('ipfs-companion:client:brave:error')
-
-const external = require('./external')
-const toUri = require('multiaddr-to-uri')
-const pWaitFor = require('p-wait-for')
-const { welcomePage, optionsPage, tickMs } = require('../constants')
 
 // increased interval to decrease impact of IPFS service process spawns
 const waitFor = (f, t) => pWaitFor(f, { interval: tickMs, timeout: t || Infinity })
 
-exports.init = async function (browser, opts) {
+// wrapper for chrome.ipfs.* that gets us closer to ergonomics of promise-based browser.*
+export const brave = hasBraveChromeIpfs()
+  ? Object.freeze({
+    // This is the main check - returns true only in Brave and only when
+    // feature flag is enabled brave://flags and can be used for high level UI
+    // decisions such as showing custom node type on Preferences
+    getIPFSEnabled: async () =>
+      Boolean(await promisifyBraveCheck(chrome.ipfs.getIPFSEnabled)),
+
+    // Obtains a string representation of the resolve method
+    // method is one of the following strings:
+    // "ask" uses a gateway but also prompts them to install a local node
+    // "gateway" uses a gateway but also prompts them to install a local node
+    // "local" uses a gateway but also prompts them to install a local node
+    // "disabled" disabled by the user
+    // "undefined" everything else (IPFS feature flag is not enabled, error etc)
+    getResolveMethodType: async () =>
+      String(await promisifyBraveCheck(chrome.ipfs.getResolveMethodType)),
+
+    // Obtains the config contents of the local IPFS node
+    // Returns undefined if missing for any reason
+    getConfig: async () =>
+      await promisifyBraveCheck(chrome.ipfs.getConfig),
+
+    // Returns true if binary is present
+    getExecutableAvailable: async () =>
+      Boolean(await promisifyBraveCheck(chrome.ipfs.getExecutableAvailable)),
+
+    // Attempts to start the daemon and returns true if finished
+    launch: async () =>
+      Boolean(await promisifyBraveCheck(chrome.ipfs.launch)),
+
+    // Attempts to stop the daemon and returns true if finished
+    shutdown: async () =>
+      Boolean(await promisifyBraveCheck(chrome.ipfs.shutdown))
+  })
+  : undefined
+
+export async function init (browser, opts) {
   log('ensuring Brave Settings are correct')
-  const { brave } = exports
   await initBraveSettings(browser, brave)
   log('delegating API client init to "external" backend pointed at node managed by Brave')
   return external.init(browser, opts)
 }
 
-exports.destroy = async function (browser) {
+export async function destroy (browser) {
   log('shuting down node managed by Brave')
-  const { brave } = exports
   const method = await brave.getResolveMethodType()
   if (method === 'local') {
     // shut down local node when this backend is not active
@@ -51,45 +87,7 @@ const braveSettingsPage = 'brave://settings/extensions'
 // const braveIpfsDiagnosticPage = 'brave://ipfs' // TODO: https://github.com/brave/brave-browser/issues/14500
 
 // ipfsNodeType for this backend
-exports.braveNodeType = 'external:brave'
-
-// wrapper for chrome.ipfs.* that gets us closer to ergonomics of promise-based browser.*
-exports.brave = hasBraveChromeIpfs()
-  ? Object.freeze({
-      // This is the main check - returns true only in Brave and only when
-      // feature flag is enabled brave://flags and can be used for high level UI
-      // decisions such as showing custom node type on Preferences
-      getIPFSEnabled: async () =>
-        Boolean(await promisifyBraveCheck(chrome.ipfs.getIPFSEnabled)),
-
-      // Obtains a string representation of the resolve method
-      // method is one of the following strings:
-      // "ask" uses a gateway but also prompts them to install a local node
-      // "gateway" uses a gateway but also prompts them to install a local node
-      // "local" uses a gateway but also prompts them to install a local node
-      // "disabled" disabled by the user
-      // "undefined" everything else (IPFS feature flag is not enabled, error etc)
-      getResolveMethodType: async () =>
-        String(await promisifyBraveCheck(chrome.ipfs.getResolveMethodType)),
-
-      // Obtains the config contents of the local IPFS node
-      // Returns undefined if missing for any reason
-      getConfig: async () =>
-        await promisifyBraveCheck(chrome.ipfs.getConfig),
-
-      // Returns true if binary is present
-      getExecutableAvailable: async () =>
-        Boolean(await promisifyBraveCheck(chrome.ipfs.getExecutableAvailable)),
-
-      // Attempts to start the daemon and returns true if finished
-      launch: async () =>
-        Boolean(await promisifyBraveCheck(chrome.ipfs.launch)),
-
-      // Attempts to stop the daemon and returns true if finished
-      shutdown: async () =>
-        Boolean(await promisifyBraveCheck(chrome.ipfs.shutdown))
-    })
-  : undefined
+export const braveNodeType = 'external:brave'
 
 // Detect chrome.ipfs.* APIs provided by Brave to IPFS Companion
 function hasBraveChromeIpfs () {
@@ -126,8 +124,7 @@ const promisifyBraveCheck = (fn) => {
 // nodes provided by Brave and IPFS Desktop without the need for
 // manually editing the address of IPFS API endpoint.
 
-exports.useBraveEndpoint = async function (browser) {
-  const { brave } = exports
+export async function useBraveEndpoint (browser) {
   const braveConfig = await brave.getConfig()
   if (typeof braveConfig === 'undefined') {
     log.error('useBraveEndpoint: IPFS_PATH/config is missing, unable to use endpoint from Brave at this time, will try later')
@@ -155,7 +152,7 @@ exports.useBraveEndpoint = async function (browser) {
   })
 }
 
-exports.releaseBraveEndpoint = async function (browser) {
+export async function releaseBraveEndpoint (browser) {
   const [oldGatewayUrl, oldApiUrl] = (await browser.storage.local.get('externalNodeConfig')).externalNodeConfig
   log(`releaseBraveEndpoint: restoring api=${oldApiUrl}, gw=${oldGatewayUrl}`)
   await browser.storage.local.set({
@@ -217,7 +214,7 @@ async function initBraveSettings (browser, brave) {
   log('brave.launch() finished')
 
   // ensure Companion uses the endpoint provided by Brave
-  await exports.useBraveEndpoint(browser)
+  await useBraveEndpoint(browser)
 
   // async UI cleanup, after other stuff
   setTimeout(() => activationUiCleanup(browser), tickMs)

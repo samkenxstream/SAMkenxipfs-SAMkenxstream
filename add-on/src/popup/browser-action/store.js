@@ -1,15 +1,15 @@
 'use strict'
 /* eslint-env browser, webextensions */
 
-const browser = require('webextension-polyfill')
-const isIPFS = require('is-ipfs')
-const { browserActionFilesCpImportCurrentTab } = require('../../lib/ipfs-import')
-const { ipfsContentPath } = require('../../lib/ipfs-path')
-const { welcomePage, optionsPage } = require('../../lib/constants')
-const { contextMenuViewOnGateway, contextMenuCopyAddressAtPublicGw, contextMenuCopyPermalink, contextMenuCopyRawCid, contextMenuCopyCanonicalAddress, contextMenuCopyCidAddress } = require('../../lib/context-menus')
+import browser from 'webextension-polyfill'
+import isIPFS from 'is-ipfs'
+import { browserActionFilesCpImportCurrentTab } from '../../lib/ipfs-import.js'
+import { ipfsContentPath } from '../../lib/ipfs-path.js'
+import { welcomePage, optionsPage } from '../../lib/constants.js'
+import { contextMenuViewOnGateway, contextMenuCopyAddressAtPublicGw, contextMenuCopyPermalink, contextMenuCopyRawCid, contextMenuCopyCanonicalAddress, contextMenuCopyCidAddress } from '../../lib/context-menus.js'
 
 // The store contains and mutates the state for the app
-module.exports = (state, emitter) => {
+export default (state, emitter) => {
   Object.assign(state, {
     // Global toggles
     active: true,
@@ -38,6 +38,8 @@ module.exports = (state, emitter) => {
   let port
 
   emitter.on('DOMContentLoaded', async () => {
+    browser.runtime.sendMessage({ telemetry: { trackView: 'browser-action' } })
+
     // initial render with status stub
     emitter.emit('render')
     // initialize connection to the background script which will trigger UI updates

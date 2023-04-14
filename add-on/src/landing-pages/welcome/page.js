@@ -1,13 +1,13 @@
 'use strict'
 
-const browser = require('webextension-polyfill')
-const html = require('choo/html')
-const logo = require('../../popup/logo')
-const { renderTranslatedLinks, renderTranslatedSpans } = require('../../utils/i18n')
+import browser from 'webextension-polyfill'
+import html from 'choo/html/index.js'
+import logo from '../../popup/logo.js'
+import { renderTranslatedLinks, renderTranslatedSpans } from '../../utils/i18n.js'
 
 // Brave detection
-const { brave } = require('../../../src/lib/ipfs-client/brave')
-const { optionsPage } = require('../../../src/lib/constants')
+import { brave } from '../../../src/lib/ipfs-client/brave.js'
+import { optionsPage } from '../../../src/lib/constants.js'
 
 // Assets
 const libp2pLogo = '../../../images/libp2p.svg'
@@ -19,7 +19,7 @@ const colorIpfsLogo = '#57cbd0'
 const colorWhite = '#ffffff'
 const colorYellow = '#f39021'
 
-function createWelcomePage (i18n) {
+export default function createWelcomePage (i18n) {
   return function welcomePage (state, emit) {
     const { isIpfsOnline, peerCount } = state
     const openWebUi = (page) => () => emit('openWebUi', page)
@@ -47,16 +47,24 @@ function createWelcomePage (i18n) {
 /* ========================================================
    Render functions for the left side
    ======================================================== */
-
-const renderCompanionLogo = (i18n, isIpfsOnline) => {
+export const renderLogo = (isIpfsOnline, logoSize = 128) => {
   const logoPath = '../../../icons'
-  const logoSize = 128
+
+  return html`
+    ${logo({ path: logoPath, size: logoSize, isIpfsOnline })}
+  `
+}
+
+export const renderCompanionLogo = (i18n, isIpfsOnline, showTitle = true) => {
   const stateUnknown = isIpfsOnline === null
 
   return html`
     <div class="mt4 mb2 flex flex-column justify-center items-center transition-all ${stateUnknown && 'state-unknown'}">
-      ${logo({ path: logoPath, size: logoSize, isIpfsOnline: isIpfsOnline })}
-      <p class="montserrat mt3 mb0 f2">${i18n.getMessage('page_landingWelcome_logo_title')}</p>
+      ${renderLogo(isIpfsOnline)}
+      ${showTitle
+        ? html`<p class="montserrat mt3 mb0 f2">${i18n.getMessage('page_landingWelcome_logo_title')}</p>`
+        : ''
+      }
     </div>
   `
 }
@@ -88,17 +96,16 @@ const renderWelcome = (i18n, peerCount, openWebUi) => {
   `
 }
 
+export const nodeOffSvg = (svgWidth = 130) => html`
+<svg x="0px" y="0px" viewBox="0 0 100 100" width="${svgWidth}">
+  <path fill="${colorYellow}" d="M82.84 71.14L55.06 23a5.84 5.84 0 00-10.12 0L17.16 71.14a5.85 5.85 0 005.06 8.77h55.56a5.85 5.85 0 005.06-8.77zm-30.1-.66h-5.48V65h5.48zm0-10.26h-5.48V38.46h5.48z"/>
+</svg>
+`
+
 const renderInstallSteps = (i18n, isIpfsOnline) => {
   const copyClass = 'mv0 white f5 lh-copy'
   const anchorClass = 'aqua hover-white'
   const stateUnknown = isIpfsOnline === null
-  const svgWidth = 130
-
-  const nodeOffSvg = () => html`
-    <svg x="0px" y="0px" viewBox="0 0 100 100" width="${svgWidth}">
-      <path fill="${colorYellow}" d="M82.84 71.14L55.06 23a5.84 5.84 0 00-10.12 0L17.16 71.14a5.85 5.85 0 005.06 8.77h55.56a5.85 5.85 0 005.06-8.77zm-30.1-.66h-5.48V65h5.48zm0-10.26h-5.48V38.46h5.48z"/>
-    </svg>
-  `
 
   const optionsUrl = browser.runtime.getURL(optionsPage)
   return html`
@@ -115,7 +122,7 @@ const renderInstallSteps = (i18n, isIpfsOnline) => {
       <p class="mb2 aqua b f4 lh-title">${i18n.getMessage('page_landingWelcome_installSteps_desktop_title')}</p>
       <p class="${copyClass}">${renderTranslatedLinks('page_landingWelcome_installSteps_desktop_install', ['https://github.com/ipfs-shipyard/ipfs-desktop#ipfs-desktop'], `target="_blank" class="${anchorClass}"`)}</p>
       <p class="mb2 aqua b f4 lh-title">${i18n.getMessage('page_landingWelcome_installSteps_cli_title')}</p>
-      <p class="${copyClass}">${renderTranslatedLinks('page_landingWelcome_installSteps_cli_install', ['https://docs.ipfs.io/how-to/command-line-quick-start/'], `target="_blank" class="${anchorClass}"`)}</p>
+      <p class="${copyClass}">${renderTranslatedLinks('page_landingWelcome_installSteps_cli_install', ['https://docs.ipfs.tech/how-to/command-line-quick-start/'], `target="_blank" class="${anchorClass}"`)}</p>
     </div>
   `
 }
@@ -135,26 +142,26 @@ const renderResources = (i18n) => {
       <p class="${labelClass}">${i18n.getMessage('page_landingWelcome_resources_title_new_ipfs')}</p>
       <ul class="${copyClass}">
         <li>${renderTranslatedLinks('page_landingWelcome_resources_new_ipfs_companion_features', ['https://github.com/ipfs-shipyard/ipfs-companion#ipfs-companion-features'], `target="_blank" class="${anchorClass}"`)}</li>
-        <li>${renderTranslatedLinks('page_landingWelcome_resources_new_ipfs_concepts', ['https://docs.ipfs.io/concepts/how-ipfs-works/'], `target="_blank" class="${anchorClass}"`)}</li>
-        <li>${renderTranslatedLinks('page_landingWelcome_resources_new_ipfs_docs', ['https://docs.ipfs.io'], `target="_blank" class="${anchorClass}"`)}</li>
+        <li>${renderTranslatedLinks('page_landingWelcome_resources_new_ipfs_concepts', ['https://docs.ipfs.tech/concepts/how-ipfs-works/'], `target="_blank" class="${anchorClass}"`)}</li>
+        <li>${renderTranslatedLinks('page_landingWelcome_resources_new_ipfs_docs', ['https://docs.ipfs.tech'], `target="_blank" class="${anchorClass}"`)}</li>
       </ul>
 
       <p class="${labelClass}">${i18n.getMessage('page_landingWelcome_resources_title_build')}</p>
       <ul class="${copyClass}">
-        <li>${renderTranslatedLinks('page_landingWelcome_resources_build_tutorials', ['https://docs.ipfs.io/how-to/'], `target="_blank" class="${anchorClass}"`)}</li>
-        <li>${renderTranslatedLinks('page_landingWelcome_resources_build_examples', ['https://awesome.ipfs.io'], `target="_blank" class="${anchorClass}"`)}</li>
+        <li>${renderTranslatedLinks('page_landingWelcome_resources_build_tutorials', ['https://docs.ipfs.tech/how-to/'], `target="_blank" class="${anchorClass}"`)}</li>
+        <li>${renderTranslatedLinks('page_landingWelcome_resources_build_examples', ['https://awesome.ipfs.tech'], `target="_blank" class="${anchorClass}"`)}</li>
       </ul>
 
       <p class="${labelClass}">${i18n.getMessage('page_landingWelcome_resources_title_get_help')}</p>
       <ul class="${copyClass}">
-        <li>${renderTranslatedLinks('page_landingWelcome_resources_get_help', ['https://discuss.ipfs.io'], `target="_blank" class="${anchorClass}"`)}</li>
+        <li>${renderTranslatedLinks('page_landingWelcome_resources_get_help', ['https://discuss.ipfs.tech'], `target="_blank" class="${anchorClass}"`)}</li>
       </ul>
 
       <p class="${labelClass}">${i18n.getMessage('page_landingWelcome_resources_title_community')}</p>
       <ul class="${copyClass}">
-        <li>${renderTranslatedLinks('page_landingWelcome_resources_community_contribute', ['https://docs.ipfs.io/community/contribute/ways-to-contribute/'], `target="_blank" class="${anchorClass}"`)}</li>
+        <li>${renderTranslatedLinks('page_landingWelcome_resources_community_contribute', ['https://docs.ipfs.tech/community/contribute/ways-to-contribute/'], `target="_blank" class="${anchorClass}"`)}</li>
         <li>${renderTranslatedLinks('page_landingWelcome_resources_community_translate', ['https://www.transifex.com/ipfs/public/'], `target="_blank" class="${anchorClass}"`)}</li>
-        <li>${renderTranslatedLinks('page_landingWelcome_resources_community_resources', ['https://docs.ipfs.io/community/'], `target="_blank" class="${anchorClass}"`)}</li>
+        <li>${renderTranslatedLinks('page_landingWelcome_resources_community_resources', ['https://docs.ipfs.tech/community/'], `target="_blank" class="${anchorClass}"`)}</li>
     </ul>
     </div>
   `
@@ -227,5 +234,3 @@ const renderProjects = (i18n) => {
     </div>
   `
 }
-
-module.exports = createWelcomePage
